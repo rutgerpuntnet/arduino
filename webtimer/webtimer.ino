@@ -1,5 +1,5 @@
 /*
-Arduino sketch that reads a webparameter used to set a timer on a relay
+Arduino sketch that reads a webparameter used to set a timer on a relay and replies with json data
  */
 
 #include <OneWire.h>
