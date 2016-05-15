@@ -29,7 +29,6 @@ byte subnet[] = { 255, 255, 255, 0 };                  //subnet mask
 EthernetServer server(80);                             //server port
 
 String readString(100);
-String finalstring = String(100);
 
 void setup() {
   // Open serial communications
@@ -116,8 +115,16 @@ long webServerLoop() {
           client.print(millis());
           client.print("},");
 
-          client.print("{ \"relay1TimeSpent\": ");
-          client.print((millis() - relay1Timer));
+          client.print("{ \"relayTimeSpentSeconds\": ");
+          client.print((millis() - relay1Timer)/1000);
+          client.print("},");
+
+          client.print("{ \"relayTimeLeftSeconds\": ");
+          if (RELAY_1_INTERVAL == 0) {
+            client.print(0);
+          } else {
+            client.print(RELAY_1_INTERVAL - ((millis() - relay1Timer)/1000));          
+          }
           client.print("},");
 
           client.print("{ \"temp\": ");
@@ -152,12 +159,11 @@ long webServerLoop() {
               Serial.println("double number");
               index2++;
             }
-            finalstring = readString.substring(index, index + 2);
+            String finalstring = readString.substring(index, index + 2);
             Serial.print("finalstring: ");
             Serial.println(finalstring);
             result = finalstring.toInt();
           }
-
 
           //clearing string for next read
           readString = "";
