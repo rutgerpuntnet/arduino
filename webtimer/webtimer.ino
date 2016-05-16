@@ -58,17 +58,22 @@ void loop() {
     Serial.println(relay1Timer);
 
     digitalWrite(RELAY_PIN_1, LOW); // toggle relay ON (= relay pin low)
+  } else if (webresponse == -1) {
+    // force turn off
+    RELAY_1_INTERVAL = 0L;
+    Serial.println("Turned off relay timer");
   }
 
   //read temp every minute (takes at least 1 second)
   if (TEMP_INTERVAL != 0 && (millis() - tempTimer) > TEMP_INTERVAL) {
+    Serial.print("Reading temperature");
     tempTimer = millis();
     readTemperature();
   }
 
   // TIMER block
   if (RELAY_1_INTERVAL != 0 && (millis() - relay1Timer) > RELAY_1_INTERVAL) {
-    Serial.print("Timeout! Millis: ");
+    Serial.print("Timeout relay 1! At millis: ");
     Serial.println(millis());
 
     // timed out
@@ -81,7 +86,7 @@ void loop() {
 }
 
 long webServerLoop() {
-  long result = -1;
+  long result = -9999;
   // Create a client connection
   EthernetClient client = server.available();
   if (client) {
@@ -107,6 +112,11 @@ long webServerLoop() {
           client.print(RELAY_1_INTERVAL);
           client.print("},");
 
+
+          client.print("{ \"relay1SwitchedOn\": ");
+          client.print(RELAY_1_INTERVAL > 0);
+          client.print("},");
+
           client.print("{ \"relay1TimerValue\": ");
           client.print(relay1Timer);
           client.print("},");
@@ -116,19 +126,31 @@ long webServerLoop() {
           client.print("},");
 
           client.print("{ \"relayTimeSpentSeconds\": ");
-          client.print((millis() - relay1Timer)/1000);
+          if (RELAY_1_INTERVAL == 0) {
+            client.print(0);
+          } else {
+            client.print((millis() - relay1Timer)/1000);
+          }
           client.print("},");
 
           client.print("{ \"relayTimeLeftSeconds\": ");
           if (RELAY_1_INTERVAL == 0) {
             client.print(0);
           } else {
-            client.print(RELAY_1_INTERVAL - ((millis() - relay1Timer)/1000));          
+            client.print((RELAY_1_INTERVAL - (millis() - relay1Timer))/1000);          
           }
           client.print("},");
 
           client.print("{ \"temp\": ");
           client.print(latestTemp);
+          client.print("},");
+
+          client.print("{ \"tempTimer\": ");
+          client.print(tempTimer);
+          client.print("},");
+
+          client.print("{ \"tempInterval\": ");
+          client.print(TEMP_INTERVAL);
           client.print("},");
 
           client.print("{ \"humid1\": ");
@@ -179,7 +201,7 @@ long webServerLoop() {
   return result;
 }
 
-void readTemperature() {
+void readTemperatureOLD() {
 
   byte data[2];
   ds.reset(); 
@@ -191,10 +213,116 @@ void readTemperature() {
   ds.write(0xBE);
   data[0] = ds.read(); 
   data[1] = ds.read();
-  int Temp = (data[1]<<8)+data[0];
-  Temp = Temp>>4;
-  latestTemp = Temp;
+  int temp = (data[1]<<8)+data[0];
+  Serial.print("tempvalue read: ");
+  Serial.println(temp);
+  temp = temp>>4;
+  latestTemp = temp;
+  Serial.print("latestTemp: ");
+  Serial.println(latestTemp);
 }
+
+
+void readTemperature() {
+    byte i;
+  byte present = 0;
+  byte type_s;
+  byte data[12];
+  byte addr[8];
+  float celsius, fahrenheit;
+  
+  if ( !ds.search(addr)) {
+    Serial.println("No more addresses.");
+    Serial.println();
+    ds.reset_search();
+    delay(250);
+    return;
+  }
+  
+  Serial.print("ROM =");
+  for( i = 0; i < 8; i++) {
+    Serial.write(' ');
+    Serial.print(addr[i], HEX);
+  }
+
+  if (OneWire::crc8(addr, 7) != addr[7]) {
+      Serial.println("CRC is not valid!");
+      return;
+  }
+  Serial.println();
+ 
+  // the first ROM byte indicates which chip
+  switch (addr[0]) {
+    case 0x10:
+      Serial.println("  Chip = DS18S20");  // or old DS1820
+      type_s = 1;
+      break;
+    case 0x28:
+      Serial.println("  Chip = DS18B20");
+      type_s = 0;
+      break;
+    case 0x22:
+      Serial.println("  Chip = DS1822");
+      type_s = 0;
+      break;
+    default:
+      Serial.println("Device is not a DS18x20 family device.");
+      return;
+  } 
+
+  ds.reset();
+  ds.select(addr);
+  ds.write(0x44, 1);        // start conversion, with parasite power on at the end
+  
+  delay(1000);     // maybe 750ms is enough, maybe not
+  // we might do a ds.depower() here, but the reset will take care of it.
+  
+  present = ds.reset();
+  ds.select(addr);    
+  ds.write(0xBE);         // Read Scratchpad
+
+  Serial.print("  Data = ");
+  Serial.print(present, HEX);
+  Serial.print(" ");
+  for ( i = 0; i < 9; i++) {           // we need 9 bytes
+    data[i] = ds.read();
+    Serial.print(data[i], HEX);
+    Serial.print(" ");
+  }
+  Serial.print(" CRC=");
+  Serial.print(OneWire::crc8(data, 8), HEX);
+  Serial.println();
+
+  // Convert the data to actual temperature
+  // because the result is a 16 bit signed integer, it should
+  // be stored to an "int16_t" type, which is always 16 bits
+  // even when compiled on a 32 bit processor.
+  int16_t raw = (data[1] << 8) | data[0];
+  if (type_s) {
+    raw = raw << 3; // 9 bit resolution default
+    if (data[7] == 0x10) {
+      // "count remain" gives full 12 bit resolution
+      raw = (raw & 0xFFF0) + 12 - data[6];
+    }
+  } else {
+    byte cfg = (data[4] & 0x60);
+    // at lower res, the low bits are undefined, so let's zero them
+    if (cfg == 0x00) raw = raw & ~7;  // 9 bit resolution, 93.75 ms
+    else if (cfg == 0x20) raw = raw & ~3; // 10 bit res, 187.5 ms
+    else if (cfg == 0x40) raw = raw & ~1; // 11 bit res, 375 ms
+    //// default is 12 bit resolution, 750 ms conversion time
+  }
+  celsius = (float)raw / 16.0;
+  fahrenheit = celsius * 1.8 + 32.0;
+  latestTemp = celsius;
+  Serial.print("  Temperature = ");
+  Serial.print(celsius);
+  Serial.print(" Celsius, ");
+  Serial.print(fahrenheit);
+  Serial.println(" Fahrenheit");
+}
+
+
 
 int getFirstHumidityIndex() {
   return (10 - (analogRead(RESISTANCE_ANALOG_PIN_1) / 50));
