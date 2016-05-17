@@ -1,7 +1,7 @@
 /*
 Arduino sketch that reads a webparameter used to set a timer on a relay and replies with json data
  */
-
+#include <Average.h>
 #include <OneWire.h>
 #include <SPI.h>
 #include <Ethernet.h>
@@ -12,6 +12,7 @@ const int RELAY_PIN_2 = 9;                  // Connect Digital Pin 9 on Arduino 
 const int TEMP_PIN = 4;                  // pin for temperature sensor
 const int RESISTANCE_ANALOG_PIN_1 = 0;          // analog pin for resistance measure 1
 const int RESISTANCE_ANALOG_PIN_2 = 1;          // analog pin for resistance measure 2
+const int HUMIDITY_ARRAY_SIZE = 5;
 
 OneWire ds(TEMP_PIN);  // on pin 4 (a 4.7K resistor is necessary)
 
@@ -19,6 +20,8 @@ unsigned long relay1Timer; // the timer for relay 1
 long RELAY_1_INTERVAL = 0; // the repeat interval
 unsigned long tempTimer; // the timer for temp check
 long TEMP_INTERVAL = 1000L * 60L; // the repeat interval for the temp (1 minute)
+unsigned long humidTimer; // the timer for humid check
+long HUMID_INTERVAL = 1000L * 10L; // the repeat interval for the temp (10 secs)
 
 int latestTemp;
 
@@ -27,6 +30,9 @@ byte ip[] = { 192, 168, 1, 12 };                      // ip in lan (that's what 
 byte gateway[] = { 192, 168, 1, 1 };                   // internet access via router
 byte subnet[] = { 255, 255, 255, 0 };                  //subnet mask
 EthernetServer server(80);                             //server port
+
+Average<float> humidities1(HUMIDITY_ARRAY_SIZE); // Rolling array object giving an average for the humidity values
+Average<float> humidities2(HUMIDITY_ARRAY_SIZE); // Rolling array object giving an average for the humidity values
 
 String readString(100);
 
@@ -43,6 +49,8 @@ void setup() {
 
   relay1Timer = millis(); // start timer
   tempTimer = millis();
+  humidTimer = millis();
+  
   readTemperature();
 }
 
@@ -64,11 +72,21 @@ void loop() {
     Serial.println("Turned off relay timer");
   }
 
-  //read temp every minute (takes at least 1 second)
+  //read temp every minute (takes at least 1 second) and the humidity
   if (TEMP_INTERVAL != 0 && (millis() - tempTimer) > TEMP_INTERVAL) {
     Serial.print("Reading temperature");
     tempTimer = millis();
     readTemperature();
+  }
+
+  //read humid every 10 secs
+  if (HUMID_INTERVAL != 0 && (millis() - humidTimer) > HUMID_INTERVAL) {
+    Serial.print("Reading humidity");
+
+    int humid1 = (10 - (analogRead(RESISTANCE_ANALOG_PIN_1) / 50));
+    humidities1.rolling(humid1);
+    int humid2 = (10 - (analogRead(RESISTANCE_ANALOG_PIN_2) / 50));
+    humidities2.rolling(humid2);
   }
 
   // TIMER block
@@ -154,11 +172,11 @@ long webServerLoop() {
           client.print("},");
 
           client.print("{ \"humid1\": ");
-          client.print(getFirstHumidityIndex());
+          client.print(humidities1.mean());
           client.print("},");
 
           client.print("{ \"humid2\": ");
-          client.print(getSecondHumidityIndex());
+          client.print(humidities2.mean());
           client.print("},");
 
           client.print("]");
@@ -320,16 +338,6 @@ void readTemperature() {
   Serial.print(" Celsius, ");
   Serial.print(fahrenheit);
   Serial.println(" Fahrenheit");
-}
-
-
-
-int getFirstHumidityIndex() {
-  return (10 - (analogRead(RESISTANCE_ANALOG_PIN_1) / 50));
-}
-
-int getSecondHumidityIndex() {
-  return (10 - (analogRead(RESISTANCE_ANALOG_PIN_2) / 50));
 }
 
 static void send_header (EthernetClient client) {
