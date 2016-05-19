@@ -31,8 +31,8 @@ byte gateway[] = { 192, 168, 1, 1 };                   // internet access via ro
 byte subnet[] = { 255, 255, 255, 0 };                  //subnet mask
 EthernetServer server(80);                             //server port
 
-Average<float> humidities1(HUMIDITY_ARRAY_SIZE); // Rolling array object giving an average for the humidity values
-Average<float> humidities2(HUMIDITY_ARRAY_SIZE); // Rolling array object giving an average for the humidity values
+Average<int> humidities1(HUMIDITY_ARRAY_SIZE); // Rolling array object giving an average for the humidity values
+Average<int> humidities2(HUMIDITY_ARRAY_SIZE); // Rolling array object giving an average for the humidity values
 
 String readString(100);
 
@@ -82,11 +82,13 @@ void loop() {
   //read humid every 10 secs
   if (HUMID_INTERVAL != 0 && (millis() - humidTimer) > HUMID_INTERVAL) {
     Serial.print("Reading humidity");
-
-    int humid1 = (10 - (analogRead(RESISTANCE_ANALOG_PIN_1) / 50));
-    humidities1.rolling(humid1);
-    int humid2 = (10 - (analogRead(RESISTANCE_ANALOG_PIN_2) / 50));
-    humidities2.rolling(humid2);
+    if (millis() % 2) // Measure 1 or 2, not both, random (since analogread needs a delay before reading another pin)
+      int humid1 = analogRead(RESISTANCE_ANALOG_PIN_1);
+      humidities1.rolling(humid1);
+    } else {
+      int humid2 = analogRead(RESISTANCE_ANALOG_PIN_2);
+      humidities2.rolling(humid2);
+    }
   }
 
   // TIMER block
@@ -172,11 +174,11 @@ long webServerLoop() {
           client.print("},");
 
           client.print("{ \"humid1\": ");
-          client.print(humidities1.mean());
+          client.print((10 - (humidities1.mean() / 50));
           client.print("},");
 
           client.print("{ \"humid2\": ");
-          client.print(humidities2.mean());
+          client.print((10 - (humidities2.mean() / 50));
           client.print("},");
 
           client.print("]");
