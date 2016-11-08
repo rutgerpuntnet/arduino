@@ -50,7 +50,8 @@ void setup() {
   relay1Timer = millis(); // start timer
   tempTimer = millis();
   humidTimer = millis();
-  
+  digitalWrite(RELAY_PIN_1, HIGH); // turn relay off
+
   readTemperature();
 }
 
@@ -69,6 +70,7 @@ void loop() {
   } else if (webresponse == -1) {
     // force turn off
     RELAY_1_INTERVAL = 0L;
+    digitalWrite(RELAY_PIN_1, HIGH); // turn relay off
     Serial.println("Turned off relay timer");
   }
 
@@ -82,12 +84,10 @@ void loop() {
   //read humid every 10 secs
   if (HUMID_INTERVAL != 0 && (millis() - humidTimer) > HUMID_INTERVAL) {
     Serial.print("Reading humidity");
-    if (millis() % 2) // Measure 1 or 2, not both, random (since analogread needs a delay before reading another pin)
-      int humid1 = analogRead(RESISTANCE_ANALOG_PIN_1);
-      humidities1.rolling(humid1);
+    if (millis() % 2) { // Measure 1 or 2, not both, random (since analogread needs a delay before reading another pin)
+      humidities1.rolling(analogRead(RESISTANCE_ANALOG_PIN_1));
     } else {
-      int humid2 = analogRead(RESISTANCE_ANALOG_PIN_2);
-      humidities2.rolling(humid2);
+      humidities2.rolling(analogRead(RESISTANCE_ANALOG_PIN_2));
     }
   }
 
@@ -127,61 +127,49 @@ long webServerLoop() {
 
           // Create (HTML) response
           send_header(client);
-          client.print("[");
-          client.print("{ \"relay1Interval\": ");
+        
+          client.print("{\"relay1Interval\": ");
           client.print(RELAY_1_INTERVAL);
-          client.print("},");
 
 
-          client.print("{ \"relay1SwitchedOn\": ");
+          client.print(",\"relay1SwitchedOn\": ");
           client.print(RELAY_1_INTERVAL > 0);
-          client.print("},");
 
-          client.print("{ \"relay1TimerValue\": ");
+          client.print(",\"relay1TimerValue\": ");
           client.print(relay1Timer);
-          client.print("},");
 
-          client.print("{ \"millis\": ");
+          client.print(",\"millis\": ");
           client.print(millis());
-          client.print("},");
 
-          client.print("{ \"relayTimeSpentSeconds\": ");
+          client.print(",\"relayTimeSpentSeconds\": ");
           if (RELAY_1_INTERVAL == 0) {
             client.print(0);
           } else {
             client.print((millis() - relay1Timer)/1000);
           }
-          client.print("},");
 
-          client.print("{ \"relayTimeLeftSeconds\": ");
+          client.print(",\"relayTimeLeftSeconds\": ");
           if (RELAY_1_INTERVAL == 0) {
             client.print(0);
           } else {
             client.print((RELAY_1_INTERVAL - (millis() - relay1Timer))/1000);          
           }
-          client.print("},");
 
-          client.print("{ \"temp\": ");
+          client.print(",\"temp\": ");
           client.print(latestTemp);
-          client.print("},");
 
-          client.print("{ \"tempTimer\": ");
+          client.print(",\"tempTimer\": ");
           client.print(tempTimer);
-          client.print("},");
 
-          client.print("{ \"tempInterval\": ");
+          client.print(",\"tempInterval\": ");
           client.print(TEMP_INTERVAL);
-          client.print("},");
 
-          client.print("{ \"humid1\": ");
-          client.print((10 - (humidities1.mean() / 50));
-          client.print("},");
+          client.print(",\"humid1\": ");
+          client.print((10 - (humidities1.mean() / 50)));
 
-          client.print("{ \"humid2\": ");
-          client.print((10 - (humidities2.mean() / 50));
-          client.print("},");
-
-          client.print("]");
+          client.print(",\"humid2\": ");
+          client.print((10 - (humidities2.mean() / 50)));
+          client.print("}");
 
           delay(1);
           //stopping client
